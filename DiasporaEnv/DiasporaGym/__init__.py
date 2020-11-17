@@ -1,8 +1,13 @@
 from gym.envs.registration import register
-import random
-#a=random.randint(3,10000000000)
+
+from gym.envs.registration import registry
+
+env_id='diaspora-v0'
+if env_id in registry.env_specs.keys():
+    del registry.env_specs[env_id]
+
 register(
-    id=f'diaspora-v10',
+    id='diaspora-v0',
     entry_point='DiasporaGym.env:DiasporaEnv',
 )
 

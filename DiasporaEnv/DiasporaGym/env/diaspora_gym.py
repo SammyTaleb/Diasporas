@@ -20,7 +20,7 @@ class DiasporaEnv(gym.Env):
     self.actions_grid=['query_return','query_query_step','record_return','record_step','stop']
     self.actions_kb=["add_to_db_field","delete_db_field","stop"]#ésto es una distribución no bernoulli
     self.kd_gold_standard=0
-    self.web_data_frame = pd.read_csv("diaspora_gym/data/big.csv").drop_duplicates()
+    self.web_data_frame = pd.read_csv("DiasporaGym/data/big.csv").drop_duplicates()
     self.persons=list(set(self.web_data_frame.id_person.tolist()))
     self.num_persons=len(self.persons)-1
     self.person_ind=-1
@@ -34,8 +34,8 @@ class DiasporaEnv(gym.Env):
     self.gold_standard=[]
     self.episode_continues=False
     self.num_steps_per_episode=0
-    self.gold_json=json.load(open('diaspora_gym/data/gold_std.json','r'))['_default']
-    self.words_organizations=open('diaspora_gym/data/jrc-organizations.txt','r').readlines()
+    #self.gold_json=json.load(open('DiasporaGym/data/gold_std.json','r'))['_default']
+    self.words_organizations=open('DiasporaGym/data/jrc-organizations.txt','r',encoding='utf').readlines()
     self.env=self
     self.actionHash={key:selection for key,selection
                       in enumerate(
@@ -50,7 +50,7 @@ class DiasporaEnv(gym.Env):
     self.vocab_len=0
     self.let_dict={}
     self.let_len=0
-    self._configParams=json.load(open('diaspora_gym/config/preprocess.json','r'))
+    self._configParams=json.load(open('DiasporaGym/config/preprocess.json','r'))
     self._preprocessText()
     self._perprocessURL()
     
