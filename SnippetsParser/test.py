@@ -29,7 +29,16 @@ def snippetsParser(person,_query,search_engine_nbr=0):
     return snippets_frame
 
 def query(personnes,_query,search_engine_nbr=0):
+    prev_results=[]
+    try:
+        df=pd.read_csv('../DiasporaEnv/DiasporaGym/data/big.csv')
+        for i in range(df.shape[0]):
+            prev_results.append({'site':df.iloc[i]['site'],'engine_search':df.iloc[i]['engine_search'],
+                                       'id_person':df.iloc[i]['id_person'],'search':df.iloc[i]['search'],'title':df.iloc[i]['title'],'text':df.iloc[i]['text']})
+    except:
+        pass
     results=[]
+    results.extend(prev_results)
     for person in personnes:
         res=snippetsParser(person,_query,search_engine_nbr)
         for ele in res:
@@ -38,10 +47,11 @@ def query(personnes,_query,search_engine_nbr=0):
 
 if __name__=='__main__':
     personnes=['Sammy Taleb','Pegah Alizadeh','Tristan Darrigol','Donald Trump','Joe Biden','Barack Obama','Emmanuel Macron']
-    results=query(personnes,'university',0)
+    results=query(personnes,'education',0)
     for i in range(len(results['site'])):
-        if int(results['engine_search'][i])==0:
+        if int(results['engine_search'][i])==0 and 'google.' in results['site'][i]:
             results['site'][i]=results['site'][i][29:]
+        
     results.to_csv('../DiasporaEnv/DiasporaGym/data/big.csv')
     print(results)
 

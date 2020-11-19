@@ -34,8 +34,8 @@ class DiasporaEnv(gym.Env):
     self.gold_standard=[]
     self.episode_continues=False
     self.num_steps_per_episode=0
-    #self.gold_json=json.load(open('DiasporaGym/data/gold_std.json','r'))['_default']
-    self.words_organizations=open('DiasporaGym/data/jrc-organizations.txt','r',encoding='utf').readlines()
+    self.gold_json=json.load(open('DiasporaGym/data/gold_std.json','r'))
+    self.words_organizations=open('DiasporaGym/data/jrc-organizations.txt','r',encoding='utf').read().lower().splitlines()
     self.env=self
     self.actionHash={key:selection for key,selection
                       in enumerate(
@@ -119,7 +119,11 @@ class DiasporaEnv(gym.Env):
     return self.word_dict
 
   def _pathSeq(self,sequence,max_len,vocab_dict):
-    seq = [int(vocab_dict.get(element,vocab_dict['UNK'])) for element in sequence if vocab_dict.get(element,vocab_dict['UNK'])]
+    try:
+        seq = [int(vocab_dict.get(element,vocab_dict['UNK'])) for element in sequence if vocab_dict.get(element,vocab_dict['UNK'])]
+    except:
+        if vocab_dict.get(sequence,vocab_dict['UNK']):
+            seq=[int(vocab_dict.get(sequence,vocab_dict['UNK']))]
     pad_sequence=pad_sequences([seq], maxlen=max_len, dtype='int32', padding='post', truncating='post', value=int(vocab_dict["PAD"]))
     return pad_sequence
 
@@ -128,15 +132,15 @@ class DiasporaEnv(gym.Env):
     if self._configParams['outputs']['cite']==True:
       output.append(
         self._pathSeq(
-          nonProcessedOutput[0][0][0],
+          nonProcessedOutput[0][0][1],
           self._configParams['config']['cite_length'],
           self.let_dict))
     if self._configParams['outputs']['engine_search']==True:
-      output.append(nonProcessedOutput[0][0][1])
-    if self._configParams['outputs']['id_person']==True:
       output.append(nonProcessedOutput[0][0][2])
-    if self._configParams['outputs']['number_snippet']==True:
+    if self._configParams['outputs']['id_person']==True:
       output.append(nonProcessedOutput[0][0][3])
+    if self._configParams['outputs']['number_snippet']==True:
+      output.append(nonProcessedOutput[0][0][0])
     if self._configParams['outputs']['search']==True:
       output.append(
         self._pathSeq(
@@ -160,8 +164,7 @@ class DiasporaEnv(gym.Env):
     if self._configParams['outputs']['query_seen']==True:
       output.append(nonProcessedOutput[0][2])
     if self._configParams['outputs']['agent_db']==True:
-      #TODO
-      print("DDD:")
+      output.append(nonProcessedOutput[0][3])
     return output
 
 
@@ -170,10 +173,10 @@ class DiasporaEnv(gym.Env):
     return action_grid,action_kb
 
   def step(self, action,agent_db=None):
-    """ ejecutamos el paso y regresamos el reward """
-    """ debemos regresar un arreglo del tipo:
-    respuesta:["estado","reward","booleando(si he termiando o no)"]"""
-    action_grid,action_kb=self._expandAction(action)
+    """ eexecute the next step and return the reward """
+    """we must return an arrangement of the type:
+    response:["state","reward","boolean(if it finished or not)"]"""
+    action_grid,action_kb=self._expandAction(action)#Get the actions to perform
     self.num_steps_per_episode+=1
     agent_db=self._action_db_selector(action_kb)
     query=self._action_grid_selector(action_grid)
@@ -181,6 +184,7 @@ class DiasporaEnv(gym.Env):
     self.query_seen[self.query_indexes[self.query_ind]]+=1
     query_seen=self.query_seen[self.query_indexes[self.query_ind]]
     nonProcessedOutput = [(query,self.num_steps_per_episode,query_seen,agent_db),reward,self.episode_continues]
+    #print(nonProcessedOutput)
     return [self._processOutput(nonProcessedOutput),reward,self.episode_continues,{'info':nonProcessedOutput[0]}]
     #return [np.array([self.num_steps_per_episode,query_seen],dtype=np.float64),reward,self.episode_continues,{}]
 
@@ -254,12 +258,13 @@ class DiasporaEnv(gym.Env):
     #action 3 is replace entities with top on the data base
 
   def _push_to_db(self):
-    text=" ".join(str(self.querydf.iloc[self.row_index_query[self.query_indexes[self.query_ind]]].tolist()[-2:]))
+    text=(str(self.querydf.iloc[self.row_index_query[self.query_indexes[self.query_ind]]].tolist()[-2:]))
+    #print(text)
     entities=self._get_entities(text)
-    if len(entities[0])>0:
+    if len(entities[0])>0 and entities[0] not in  self.agent_db[0]:
       self.agent_db[0].append(entities[0])
-    if len(entities[1])>0:
-      self.agent_db[1].append(entities[1])
+    if len(entities[1])>0 and int(entities[1]) not in  self.agent_db[1]:
+      self.agent_db[1].append(int(entities[1]))
     
   def _pop_from_db(self):
     try:
@@ -280,7 +285,7 @@ class DiasporaEnv(gym.Env):
             institutions.append(word_finded.strip())
     years=re.findall("[12][901][0-9]{2}",text)
     if len(institutions)>0:
-      institutions=institutions[0]
+      institutions=institutions[0].lower()
     if len(years)>0:
       years=years[0]
     return (institutions,years)
@@ -327,12 +332,12 @@ class DiasporaEnv(gym.Env):
     
   def _get_reward(self):
     """ calcular con agent_db & gold_std """
-    if self.gold_std[0] in self.agent_db[0]:
+    if self.gold_std[0].lower() in self.agent_db[0]:
       reward_institutes=1/len(self.agent_db[0])
     else:
       reward_institutes=0
     
-    if self.gold_std[1] in self.agent_db[1]:
+    if int(self.gold_std[1]) in self.agent_db[1]:
       reward_years=1/len(self.agent_db[1])
     else:
       reward_years=0
