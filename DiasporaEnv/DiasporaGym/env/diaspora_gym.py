@@ -10,7 +10,7 @@ import numpy as np
 import itertools
 from collections import Counter
 from keras_preprocessing.sequence import pad_sequences
-from .snipparse import snippetsParser
+from .snipparse import snippetsParser, snippetsParser2
 import string
 
 class DiasporaEnv(gym.Env):
@@ -52,7 +52,6 @@ class DiasporaEnv(gym.Env):
     self.let_dict={}
     self.let_len=0
     self._configParams=json.load(open('DiasporaGym/config/preprocess.json','r'))
-    self._preprocessText()
     self._perprocessURL()
     
 
@@ -68,6 +67,7 @@ class DiasporaEnv(gym.Env):
     self.action_space = spaces.Discrete(len(self.actionHash.keys()))
     self.observation_space = spaces.Box(low, high, dtype=np.int32)
     self.firstQuery(self.isQueryPossible())
+    self._preprocessText()
     self.person_ind=-1
   def _preprocessText(self):
     
@@ -170,10 +170,27 @@ class DiasporaEnv(gym.Env):
     if self._configParams['outputs']['query_seen']==True:
       output.append(nonProcessedOutput[0][2])
     if self._configParams['outputs']['agent_db']==True:
-      output.append(nonProcessedOutput[0][3])
+      output.append(len(nonProcessedOutput[0][3][0]))
+      output.append(len(nonProcessedOutput[0][3][1]))
     return output
 
-
+  def processState(self,state,action=None):
+    final_state=[]
+    for ele in state:
+        try:
+            a=ele.tolist()[0]
+            final_state=final_state+a
+        except:
+            final_state=final_state+[ele]
+        
+    final_state=np.array([final_state])
+    actions=[0]*len(self.actionHash)
+    if action:
+        actions[action]=1
+    actions=np.array([actions])
+    f_state=np.concatenate([np.array(final_state),np.array(actions)],axis=1)
+    return f_state
+    
   def _expandAction(self, action):
     action_grid,action_kb=self.actionHash[action]
     return action_grid,action_kb
@@ -192,7 +209,8 @@ class DiasporaEnv(gym.Env):
     query_seen=self.query_seen[self.query_indexes[self.query_ind]]
     nonProcessedOutput = [(query,self.num_steps_per_episode,query_seen,agent_db),reward,self.episode_continues]
     #print(nonProcessedOutput)
-    return [self._processOutput(nonProcessedOutput),reward,self.episode_continues,{'info':nonProcessedOutput[0]}]
+    state=self._processOutput(nonProcessedOutput)
+    return [self.processState(state,action),reward,self.episode_continues,'info']
     #return [np.array([self.num_steps_per_episode,query_seen],dtype=np.float64),reward,self.episode_continues,{}]
 
   def reset(self):
@@ -234,7 +252,11 @@ class DiasporaEnv(gym.Env):
     except IndexError:
         query_seen=0
     #return [(query,self.num_steps_per_episode,query_seen,agent_db),reward,self.episode_continues]
-    return [np.array([self.num_steps_per_episode,query_seen],dtype=np.float64)]
+    
+    query= self.querydf.iloc[self.row_index_query[self.query_indexes[self.query_ind]]].tolist()
+    nonProcessedOutput = [(query,self.num_steps_per_episode,query_seen,[[],[]]),0,self.episode_continues]
+    state=self._processOutput(nonProcessedOutput)
+    return self.processState(state)
 
   def _action_grid_selector(self,action_grid):
       #print(action_grid)
@@ -260,6 +282,7 @@ class DiasporaEnv(gym.Env):
       query_indexes=self.query_indexes[query_ind]
       row_index=self.row_index_query[query_indexes]
       return self.querydf.iloc[row_index].tolist()
+      
 
   def _action_db_selector(self,action_selector):
     #print(action_selector)
@@ -276,17 +299,13 @@ class DiasporaEnv(gym.Env):
     #action 3 is replace entities with top on the data base
 
   def _push_to_db(self):
-    try:
-        
-        text=(str(self.querydf.iloc[self.row_index_query[self.query_indexes[self.query_ind]]].tolist()[-2:]))
-        #print(text)
-        entities=self._get_entities(text)
-        if len(entities[0])>0 and entities[0] not in  self.agent_db[0]:
-          self.agent_db[0].append(entities[0])
-        if len(entities[1])>0 and int(entities[1]) not in  self.agent_db[1]:
-          self.agent_db[1].append(int(entities[1]))
-    except:
-        pass
+    text=(str(self.querydf.iloc[self.row_index_query[self.query_indexes[self.query_ind]]].tolist()[-2:]))
+    #print(text)
+    entities=self._get_entities(text)
+    if len(entities[0])>0 and entities[0] not in  self.agent_db[0]:
+      self.agent_db[0].append(entities[0])
+    if len(entities[1])>0 and int(entities[1]) not in  self.agent_db[1]:
+      self.agent_db[1].append(int(entities[1]))
     
   def _pop_from_db(self):
     try:
@@ -305,6 +324,17 @@ class DiasporaEnv(gym.Env):
         if idx >= 0:
             word_finded=text[idx:idx+len(word)]
             institutions.append(word_finded.strip())
+        else:
+            initials=""
+            try:
+                for ele in word.split(' '):
+                    initials+=ele[0]
+                    if len(initials)>3:
+                        idx=text.lower().find(initials)
+                        if idx>=0:
+                            institutions.append(initials.strip())
+            except:
+                pass
     years=re.findall("[12][901][0-9]{2}",text)
     if len(institutions)>0:
       institutions=institutions[0].lower()
@@ -336,29 +366,28 @@ class DiasporaEnv(gym.Env):
   def firstQuery(self,query):
       #search_engine=[0,1,2,3]
       search_engine=[0]
+      #results=snippetsParser(query,self.persons[self.person_ind])
+      
       for engine in search_engine:
-          results=snippetsParser(self.persons[self.person_ind],query,engine)
-          final_results=[]
-          final_results.extend(results)
-          self.web_data_frame=pd.DataFrame(final_results)
+          results=snippetsParser2(self.persons[self.person_ind],query,engine)
+          
+      self.web_data_frame=pd.DataFrame(results)
   def newQuery(self,query):
       #search_engine=[0,1,2,3]
       search_engine=[0]
+      #results=snippetsParser(query,self.persons[self.person_ind])
       for engine in search_engine:
-          results=snippetsParser(self.persons[self.person_ind],query,engine)
-          final_results=[]
-          for index,row in self.web_data_frame.iterrows():
-              final_results.append({'number_snippet':row['number_snippet'],'site':row['site'],'engine_search':row['engine_search'],
-                                       'id_person':row['id_person'],'search':row['search'],'title':row['title'],'text':row['text']})
-          
-          final_results.extend(results)
-          self.web_data_frame=pd.DataFrame(final_results)
+          results=snippetsParser2(self.persons[self.person_ind],query,engine)
       
+      start=self.web_data_frame.shape[0]
+      for i in range(len(results)):
+          self.web_data_frame.loc[start+i]=results[i]
       self.querys_step.append(query)
       self.episodeDF = self.web_data_frame.loc[self.web_data_frame['id_person'] == self.persons[self.person_ind]].sort_values(['engine_search','number_snippet'])
       self.query_indexes.append(self.query_indexes[-1]+1)
       self.row_index_query.append(0)
       self.query_seen.append(0)
+      self.word_dict = self._getWordDictFromPreprocessed(self._configParams)
 
       
       
@@ -369,9 +398,7 @@ class DiasporaEnv(gym.Env):
           self.newQuery(query)
           self.query_ind=self.query_ind+1
           
-      print('dans le if')
     else:
-      print('dans le else !!!!!!!!')
       self.query_ind+=1
     self.querydf=self.episodeDF.loc[self.episodeDF["search"] == self.querys_step[self.query_indexes[self.query_ind]]]
   def _query_return(self):
@@ -400,8 +427,16 @@ class DiasporaEnv(gym.Env):
   def _get_reward(self):
     if self.gold_std[0] in self.agent_db[0]:
       reward_institutes=1/len(self.agent_db[0])
+    elif self.gold_std[0] is None:
+        reward_institutes=0 if len(self.agent_db[0])==0 else 1/len(self.agent_db[0])
     else:
-      reward_institutes=0
+      initials=""
+      for ele in self.gold_std[0].split(" "):
+          initials+=ele[0]
+      if initials in self.agent_db[0]:
+          reward_institutes=1/len(self.agent_db[0])
+      else:
+          reward_institutes=0
     
     if self.gold_std[1] in self.agent_db[1]:
       reward_years=1/len(self.agent_db[1])
